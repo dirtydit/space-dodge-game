@@ -1,0 +1,68 @@
+<html lang="id">
+// stars
+for(let i=0;i<60;i++){
+const x = (i*37)%W + (i%3)*7; const y = (i*17)%H; ctx.fillStyle='rgba(255,255,255,0.03)'; ctx.fillRect(x,y,1.5,1.5);
+}
+
+
+// player (vector-style ship)
+const p = state.player;
+ctx.save(); ctx.translate(p.x,p.y);
+ctx.beginPath(); ctx.moveTo(-20,12); ctx.quadraticCurveTo(-10,6,0,6); ctx.quadraticCurveTo(8,6,20,12); ctx.lineTo(10,-12); ctx.quadraticCurveTo(0,-20,-10,-12); ctx.closePath();
+ctx.fillStyle = '#6ee7b7'; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1; ctx.stroke();
+// cockpit
+ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.fillStyle='rgba(2,6,23,0.9)'; ctx.fill(); ctx.restore();
+
+
+// entities
+for(const e of state.entities){
+if(e.type === 'orb'){
+ctx.beginPath(); ctx.arc(e.x,e.y,e.r,0,Math.PI*2); ctx.fillStyle='rgba(110,231,183,0.95)'; ctx.fill(); ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.stroke();
+// small shine
+ctx.beginPath(); ctx.arc(e.x-4,e.y-4,3,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.28)'; ctx.fill();
+} else {
+ctx.save(); ctx.translate(e.x,e.y); ctx.rotate(e.ang);
+ctx.beginPath(); ctx.moveTo(-e.r/2,-e.r/3); ctx.lineTo(0,-e.r); ctx.lineTo(e.r/2,-e.r/3); ctx.lineTo(e.r,0); ctx.lineTo(e.r/3,e.r/2); ctx.lineTo(-e.r/3,e.r/2); ctx.closePath();
+ctx.fillStyle='rgba(120,120,120,0.95)'; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.2)'; ctx.lineWidth=1; ctx.stroke();
+ctx.restore();
+}
+}
+
+
+// HUD score
+ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.fillRect(12,12,160,34);
+ctx.fillStyle='#dbeafe'; ctx.font='16px system-ui'; ctx.fillText(`Score: ${Math.floor(state.score)}`,20,34);
+}
+
+
+let last = performance.now();
+function loop(now){
+const dt = Math.min(0.033, (now-last)/1000); last=now;
+update(dt);
+draw();
+requestAnimationFrame(loop);
+}
+
+
+function startGame(){ state.running=true; state.score=0; state.lives=3; state.entities=[]; state.player.x = W/2; beep(660,0.06,0.06); }
+function endGame(){ state.running=false; beep(120,0.18,0.12); alert(`Game over! Skor: ${Math.floor(state.score)}. Tekan OK untuk restart.`); }
+
+
+// Buttons
+startBtn.addEventListener('click', ()=>{ startGame(); });
+muteBtn.addEventListener('click', ()=>{ state.muted = !state.muted; muteBtn.textContent = state.muted ? 'Unmute' : 'Mute'; });
+
+
+// Resize handling (canvas uses fixed internal size but scaled with CSS)
+function fitCanvas(){ const rect = canvas.getBoundingClientRect(); const scale = rect.width / W; canvas.style.height = (H * scale) + 'px'; }
+window.addEventListener('resize', fitCanvas); fitCanvas();
+
+
+// Start loop
+requestAnimationFrame(loop);
+
+
+})();
+</script>
+</body>
+</html>
