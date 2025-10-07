@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Space Dodge — Mini Game</title>
+  <style>
+    :root{--bg:#0b1020;--panel:#0f1724;--accent:#6ee7b7}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+    body{display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 20% 10%, #0f1a37 0%, var(--bg) 40%), #02030a;color:#dbeafe}
+    .wrap{width:900px;max-width:96vw;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.03));border-radius:12px;box-shadow:0 10px 30px rgba(2,6,23,0.7);padding:18px}
+    header{display:flex;align-items:center;gap:12px}
+    h1{margin:0;font-size:18px;font-weight:600}
+    p.lead{margin:6px 0 12px;font-size:13px;color:#cbd5e1}
+    #gameCanvas{display:block;background:linear-gradient(180deg,#061021 0%, #071428 100%);width:100%;height:540px;border-radius:8px}
+    .controls{display:flex;gap:8px;align-items:center;margin-top:12px}
+    .btn{background:var(--panel);border:1px solid rgba(255,255,255,0.04);padding:8px 12px;border-radius:8px;cursor:pointer;color:#e6eef8}
+    .meta{margin-left:auto;text-align:right;font-size:13px;color:#9fb0d9}
+    .hint{font-size:12px;color:#9fb0d9;margin-top:8px}
+    footer{margin-top:10px;font-size:12px;color:#9fb0d9}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Space Dodge — Mini Game</h1>
+      <div class="meta">Use arrow keys / A-D / touch to move</div>
+    </header>
+    <p class="lead">Kendalikan pesawat kecil, hindari meteorit, kumpulkan power-up, dan capai skor tertinggi.</p>
+
+    <canvas id="gameCanvas" width="900" height="540"></canvas>
+
+    <div class="controls">
+      <button id="startBtn" class="btn">Start / Restart</button>
+      <button id="muteBtn" class="btn">Mute</button>
+      <label style="margin-left:8px;font-size:13px">Difficulty: </label>
+      <select id="diff" class="btn" style="padding:6px 8px">
+        <option value="0.9">Easy</option>
+        <option value="1">Normal</option>
+        <option value="1.12">Hard</option>
+      </select>
+      <div class="meta" id="hud">Score: 0 · Lives: 3</div>
+    </div>
+    <div class="hint">Touch: tap left/right side to move. Collect green orbs for +100, avoid gray meteors.</div>
+  </div>
+
+  <script>
+  (() => {
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+    const muteBtn = document.getElementById('muteBtn');
+    const diffSelect = document.getElementById('diff');
+    const hud = document.getElementById('hud');
+
+    let W = canvas.width, H = canvas.height;
+
+    const state = {
+      running: false,
+      score: 0,
+      lives: 3,
+      speedMultiplier: 1,
+      entities: [],
+      player: { x: W/2, y: H - 80, w: 42, h: 26, vx:0 },
+      tick: 0,
+      muted: false,
+    };
+
+    function beep(freq=440, dur=0.06, vol=0.08){
+      if(state.muted) return;
+      try{
+        const o = new (window.AudioContext||window.webkitAudioContext)();
+        const now = o.currentTime;
+        const g = o.createGain(); g.gain.setValueAtTime(vol, now);
+        const s = o.createOscillator(); s.type='sine'; s.frequency.setValueAtTime(freq, now);
+        s.connect(g); g.connect(o.destination); s.start(now); s.stop(now+dur);
+        setTimeout(()=>o.close(), (dur+0.02)*1000);
+      }catch(e){}
+    }
+
+    function rand(min,max){return Math.random()*(max-min)+min}
+    function rectsOverlap(a,b){return a.x<a.x2 && a.x2>b.x && a.y<a.y2 && a.y2>b.y}
+
+    function spawnEntity(){
+      const r = Math.random();
+      if(r < 0.18){
+        state.entities.push({type:'orb', x: rand(30,W-30), y:-20, r:12, vy: rand(1.6,2.8)*state.speedMultiplier});
+      } else {
+        const s = rand(18,46);
+        state.entities.push({type:'meteor', x: rand(20,W-20), y:-s, r:s, vy: rand(1.8,3.6)*state.speedMultiplier, ang: rand(0,Math.PI*2), va: rand(-0.02,0.02)});
+      }
+    }
+
+    const keys = {};
+    window.addEventListener('keydown', e=>{ keys[e.key]=true; });
+    window.addEventListener('keyup', e=>{ keys[e.key]=false; });
+
+    canvas.addEventListener('touchstart', e=>{
+      e.preventDefault();
+      const t=e.touches[0];
+      const rect=canvas.getBoundingClientRect();
+      const x = (t.clientX-rect.left)/rect.width*W;
+      if(x < W/2) keys['touchLeft']=true; else keys['touchRight']=true;
+    });
+    canvas.addEventListener('touchend', e=>{
+      keys['touchLeft']=false; keys['touchRight']=false;
+    });
+
+    function update(dt){
+      if(!state.running) return;
+      state.tick += dt;
+      state.speedMultiplier = parseFloat(diffSelect.value);
+      if(Math.random() < 0.02 + Math.min(0.018*(state.score/200),0.06)) spawnEntity();
+
+      const p = state.player;
+      let move = 0;
+      if(keys['ArrowLeft']||keys['a']||keys['A']||keys['touchLeft']) move = -1;
+      if(keys['ArrowRight']||keys['d']||keys['D']||keys['touchRight']) move = 1;
+      p.vx = move * (6 + Math.min(state.score/200,6));
+      p.x += p.vx;
+      p.x = Math.max(18, Math.min(W-18, p.x));
+
+      for(let i=state.entities.length-1;i>=0;i--){
+        const e = state.entities[i];
+        e.y += e.vy * dt * 60 * 0.9;
+        if(e.type === 'meteor'){ e.ang += e.va; }
+        if(e.y - (e.r||12) > H + 40){ state.entities.splice(i,1); continue; }
+
+        const a = {x: p.x - p.w/2, y: p.y - p.h/2, x2: p.x + p.w/2, y2: p.y + p.h/2};
+        const b = {x: e.x - (e.r||12), y: e.y - (e.r||12), x2: e.x + (e.r||12), y2: e.y + (e.r||12)};
+        if(rectsOverlap(a,b)){
+          if(e.type === 'orb'){
+            state.score += 100; beep(880,0.06,0.06); state.entities.splice(i,1);
+          } else {
+            state.lives -= 1; beep(160,0.12,0.12);
+            state.entities.splice(i,1);
+            p.x = Math.max(40, Math.min(W-40, p.x + (Math.random()>0.5? -60:60)));
+            if(state.lives <= 0) endGame();
+          }
+        }
+      }
+
+      state.score += 0.3 * dt * 60;
+      hud.textContent = `Score: ${Math.floor(state.score)} · Lives: ${state.lives}`;
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,W,H);
+      const g = ctx.createLinearGradient(0,0,0,H);
+      g.addColorStop(0,'rgba(6,18,33,0.08)');
+      g.addColorStop(1,'rgba(2,6,12,0.18)');
+      ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+      for(let i=0;i<60;i++){
+        const x = (i*37)%W + (i%3)*7;
+        const y = (i*17)%H;
+        ctx.fillStyle='rgba(255,255,255,0.03)';
+        ctx.fillRect(x,y,1.5,1.5);
+      }
+      const p = state.player;
+      ctx.save(); ctx.translate(p.x,p.y);
+      ctx.beginPath();
+      ctx.moveTo(-20,12); ctx.quadraticCurveTo(-10,6,0,6); ctx.quadraticCurveTo(8,6,20,12);
+      ctx.lineTo(10,-12); ctx.quadraticCurveTo(0,-20,-10,-12); ctx.closePath();
+      ctx.fillStyle = '#6ee7b7'; ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1; ctx.stroke();
+      ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2);
+      ctx.fillStyle='rgba(2,6,23,0.9)'; ctx.fill();
+      ctx.restore();
+
+      for(const e of state.entities){
+        if(e.type === 'orb'){
+          ctx.beginPath(); ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
+          ctx.fillStyle='rgba(110,231,183,0.95)'; ctx.fill(); ctx.strokeStyle='rgba(255,255,255,0.06)';
+          ctx.stroke();
+          ctx.beginPath(); ctx.arc(e.x-4,e.y-4,3,0,Math.PI*2);
+          ctx.fillStyle='rgba(255,255,255,0.28)'; ctx.fill();
+        } else {
+          ctx.save(); ctx.translate(e.x,e.y); ctx.rotate(e.ang);
+          ctx.beginPath(); ctx.moveTo(-e.r/2,-e.r/3);
+          ctx.lineTo(0,-e.r); ctx.lineTo(e.r/2,-e.r/3);
+          ctx.lineTo(e.r,0); ctx.lineTo(e.r/3,e.r/2); ctx.lineTo(-e.r/3,e.r/2);
+          ctx.closePath();
+          ctx.fillStyle='rgba(120,120,120,0.95)'; ctx.fill();
+          ctx.strokeStyle='rgba(0,0,0,0.2)'; ctx.lineWidth=1; ctx.stroke();
+          ctx.restore();
+        }
+      }
+      ctx.fillStyle='rgba(255,255,255,0.08)';
+      ctx.fillRect(12,12,160,34);
+      ctx.fillStyle='#dbeafe';
+      ctx.font='16px system-ui';
+      ctx.fillText(`Score: ${Math.floor(state.score)}`,20,34);
+    }
+
+    let last = performance.now();
+    function loop(now){
+      const dt = Math.min(0.033, (now-last)/1000); last=now;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function startGame(){ state.running=true; state.score=0; state.lives=3; state.entities=[]; state.player.x = W/2; beep(660,0.06,0.06); }
+    function endGame(){ state.running=false; beep(120,0.18,0.12); alert(`Game over! Skor: ${Math.floor(state.score)}. Tekan OK untuk restart.`); }
+
+    startBtn.addEventListener('click', ()=>{ startGame(); });
+    muteBtn.addEventListener('click', ()=>{ state.muted = !state.muted; muteBtn.textContent = state.muted ? 'Unmute' : 'Mute'; });
+
+    function fitCanvas(){ const rect = canvas.getBoundingClientRect(); const scale = rect.width / W; canvas.style.height = (H * scale) + 'px'; }
+    window.addEventListener('resize', fitCanvas); fitCanvas();
+    requestAnimationFrame(loop);
+  })();
+  </script>
+</body>
+</html>
